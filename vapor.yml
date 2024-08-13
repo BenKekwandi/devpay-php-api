@@ -1,0 +1,23 @@
+id: 59434
+name: DEVPAY
+environments:
+    staging:
+        domain: staging.master.api.devpay.app
+        memory: 1024
+        database: devpay-staging-serverless-database
+        cli-memory: 512
+        firewall:
+            rate-limit: 100
+            bot-control:
+                - SignalKnownBotDataCenter
+                - SignalNonBrowserUserAgent
+                - CategoryScrapingFramework
+                - SignalAutomatedBrowser
+        runtime: 'php-8.3:al2'
+        build:
+            - 'COMPOSER_MIRROR_PATH_REPOS=1 composer install --no-scripts --no-interaction --no-progress --quiet'
+            - 'php artisan event:cache'
+        deploy:
+            - 'php artisan config:clear'
+            - 'php artisan migrate --force'
+            - 'php artisan db:seed'

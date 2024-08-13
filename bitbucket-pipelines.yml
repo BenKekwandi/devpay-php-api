@@ -1,0 +1,73 @@
+image: php:8.3-fpm
+
+clone:
+  depth: 30
+
+definitions:
+  steps:
+    - step: &codeAnalysisStep
+        size: 2x
+        name: Code Analysis & Testing
+        script:
+          - apt-get update && apt-get install -qy git curl libzip-dev libmcrypt-dev zip unzip && docker-php-ext-install zip
+          - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+          - touch ./database/database.sqlite
+          - ln -f -s .env.testing .env
+          - composer install --ignore-platform-reqs --no-scripts --no-interaction --no-progress --quiet
+          - export COMPOSER_ALLOW_SUPERUSER=1
+          - php artisan migrate
+          - php artisan db:seed --force
+          - ./vendor/bin/phpstan analyse --memory-limit=1G
+          - ./vendor/bin/phpunit
+        artifacts:
+          - var/log/*.log
+        services:
+          - docker
+#        caches:
+#          - composer
+#          - docker
+    - step: &buildingStagingServer
+        size: 2x
+        name: Building Staging Server
+        deployment: staging
+        caches:
+          - composer
+        script:
+          - apt-get update && apt-get install -qy git curl libzip-dev libmcrypt-dev zip unzip && docker-php-ext-install zip
+          - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+          - composer install --ignore-platform-reqs --no-scripts --no-interaction --no-progress --quiet
+          - export COMPOSER_ALLOW_SUPERUSER=1
+          - vendor/bin/vapor deploy staging --commit="$BITBUCKET_COMMIT"
+    - step: &buildingProductionServer
+        size: 2x
+        name: Building Production Server
+        deployment: production
+        caches:
+          - composer
+        script:
+          - apt-get update && apt-get install -qy git curl libzip-dev libmcrypt-dev zip unzip && docker-php-ext-install zip
+          - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+          - composer install --ignore-platform-reqs --no-scripts --no-interaction --no-progress --quiet
+          - export COMPOSER_ALLOW_SUPERUSER=1
+          - vendor/bin/vapor deploy production --commit="$BITBUCKET_COMMIT"
+  services:
+    docker:
+      memory: 2048
+pipelines:
+  branches:
+    '{feature/*,bugfix/*,hotfix/*}':
+      - step:
+          <<: *codeAnalysisStep
+          name: Code Analysis & Tests
+    develop:
+      - step:
+          <<: *codeAnalysisStep
+          name: Code Analysis & Tests
+      - step:
+          <<: *buildingStagingServer
+          name: Deployment Staging Server
+    main:
+      - step:
+          <<: *buildingProductionServer
+          name: Deployment Production Server
+
